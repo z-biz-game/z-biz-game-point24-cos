@@ -96,6 +96,37 @@ boot hand: spark-01
 ## 未实现清单
 
 - `electron/main.cjs` 存在但本验收未启动它 (无头环境不跑 Electron); 验收全部走 `server.cjs` 的浏览器路径.
-- `.github/workflows/ci.yml`、`pages.yml` 未在 GitHub Actions 上实跑过, 内容镜像本地命令 (`node --check`、逐 suite、`SKIP_UNIT=1 bash tools/verify.sh`).
-- 无线上部署实测数据 (本次未对已发布 origin 测量), 故无「线上验收」章节.
+- `.github/workflows/ci.yml`、`pages.yml` 已在 GitHub Actions 实跑：发布后 trigger sha `b02dba1` 结论
+  `success`（主代理 2026-09-27 复核）。
+- 线上部署已实测，数据见下面的「线上验收」章节。
 - 无乘方/开方/阶乘/拼接/小数点、无限时模式 —— 见 DESIGN §10, 属于明确不做.
+
+## 线上验收（GitHub Pages，主代理 2026-09-27 实抓）
+
+发布 sha `66d684c`，CI trigger `b02dba1` → Actions `success`。
+
+| 资源 | 结果 |
+| --- | --- |
+| `/`（index.html） | 200 / 3,341 B |
+| `js/main.js` | 200 / 14,690 B |
+| `css/game.css` | 200 / 5,427 B |
+| `js/data/lots.js` | 200 / 13,534 B |
+| `<title>` | `二十四点 · POINT 24`，与 README 标题一致 |
+
+真实浏览器渲染（`https://z-biz-game.github.io/z-biz-game-point24-cos/`，2026-09-27 09:50Z）：
+
+- canvas 后备缓冲 `1384x800`，CSS 盒 `692x400`（devicePixelRatio 2 生效，不是未布局的 300x150）；
+- `getImageData` 全量采样 1,107,200 个像素，其中 **1,106,800 个非近黑**（99.96%），出现 **1,055 种不同 RGB**
+  —— 牌面与按键铺满了整块画布，不是一张贴图或空白；
+- `window.point24` 暴露 **14 个键**（`version state pool load hand numberPoint keyPoint clearPicks …`），
+  即验收脚本驱动的那套入口在线上真实存在；
+- 控制台 **0 条消息**（无 error / warning；`index.html:8` 的 `<link rel="icon" href="data:,">` 使浏览器
+  不发 favicon 请求，所以这条断言没被 404 噪音污染）。
+
+这一节是"结构 + 像素统计"级证据（在真实页面里跑 `evaluate_script` 取 `getImageData`），**不是**逐帧视觉
+截图比对；本次未产出 PNG，仓库保持 0 个二进制资产。
+
+值得单列的一条线上修复：`@pointer` 那 17 条断言在发布前全红，根因是 `js/view.js` 的 `measure()` 只按宽度
+给牌列定尺寸（1.32×tileW）、运算符列固定 0.55×tileH 贴底，两列盒子在 864x400 画布上重叠，而 `hit()`
+先判牌列 —— 于是每一次运算符点击都被吃成一次选牌。改为按高度预算共同分配 tileH/keyH 后，两列不再可能重叠。
+CDP 事件日志证实 pointerdown 一直有送达：错的不是输入，是命中区。
