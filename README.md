@@ -1,0 +1,130 @@
+# 二十四点 · POINT 24
+
+四张牌, 加减乘除, 凑出 24. 区别在于: 这一版里"这手牌能不能解""最少用几张""本质不同的最简算式
+有几条"三个数字, 全部由**有理数域上的穷举枚举**算出来 —— 所有二叉树形状, 所有运算符, 所有
+左右顺序, 中间值一律是既约分数 `{n, d}`, 没有一处浮点数.
+
+完整空间是 1..13 的四张牌多重集, 共 **1820** 副. 全部跑完, 可解的是 **1362/1820 = 74.8%** ——
+这个数字不是文档里的一句话, 它是 `test/anchor.test.mjs` 里一条真的把 1820 副枚举一遍的断言.
+
+## 跑起来
+
+```bash
+npm run check      # 逐个文件 node --check, 零依赖
+npm run unit       # 8 个 node 测试套件
+npm start          # node server.cjs, 默认 5199
+npm run bake       # 重新量一遍题库 (约 5s), 写 js/data/lots.js
+npm run verify     # node 套件 + 一次 headless Chrome 的 CDP 实机点击
+```
+
+依赖数 0, 素材 0, 网络请求 0.
+
+## 这一版的数字从哪来
+
+`node tools/bake.mjs` 的第一遍是**对整个 1820 副做穷举**, 输出实测:
+
+```
+census over 1820 deals in 4.7s
+  可解(全四张) 1362/1820 = 74.8%  <- 公开锚点 1362/1820
+  整数中间值可解 1346/1820;其中只有分数才可解 16 副
+  最少张数分布 {"2":433,"3":779,"4":352,"unsolvable":256}
+  难度带 rejected:458 solo:352 narrow:433 spark:359 open:218
+  单副穷举耗时 中位 2ms · 最大 19ms
+```
+
+四条难度带是按**量出来的** `(cards, exprs)` 定义的, 不是拍脑袋的星级:
+
+| 带 | 判据 | 全空间里有多少副 | 池子里 | 独解比例 |
+| --- | --- | --- | --- | --- |
+| `spark` 火花 | `cards <= 2` | 359 | 12 | 11/12 |
+| `open` 开阔 | `cards == 3 && exprs >= 3` | 218 | 12 | 0/12 |
+| `narrow` 窄门 | `cards == 3 && exprs <= 2` | 433 | 12 | 9/12 |
+| `solo` 独解 | `cards == 4` | 352 | 12 | 3/12 |
+
+如实记录两件事: 一是 `open` 带只占完整空间的 **218/1820 = 12.0%** —— 随机发一副牌落进"开阔"
+的概率本来就低到两成以下, 所以那一档的搜索要多试几副 (实测 13 次取满 12 副, 拒绝原因里
+`otherBand:73 / unsolvable:13 / partialOnly:13 / duplicate:1`). 二是**接受率不等于命中率**:
+1362/1820 是"全四张可解"的比例, 池子里每一副都还额外要求全四张可解, 所以池子的接受率是 100%,
+而随机一副牌能进池的概率是 74.8%.
+
+## 已烘焙的池子
+
+浏览器**不做**穷举. `js/data/lots.js` 是 48 副牌连同它们的 `(cards, steps, exprs, sample, plan,
+intSolvable, fraction)` 一起烤出来的结果; `js/core/library.js` 只做查表. `test/library.test.mjs`
+会把这 48 副**重新解一遍**, 七个字段任何一个漂了就红.
+
+每副牌还带一个 `plan`: 长度正好 `cards - 1` 的点击序列 `{i, j, op}`, 位置是**当前牌桌上**的槽位号,
+左操作数永远是 `i`. 这是"认证解法" —— 测试和 playtest 都照着它点.
+
+## 负例: 只允许整数中间值的弱求解器
+
+`js/core/intonly.js` 是一个**故意更弱**的独立求解器: 同样的全形状枚举, 但每一步的中间值必须是
+整数, 除法只允许整除. 它不 import `frac.js`, 也不共享搜索代码.
+
+它存在的意义是**证伪**而不是自夸:
+
+```
+3,3,7,7   整数中间值: 无解      有理数: (3+3/7)*7 = 24
+1,5,5,5   整数中间值: 无解      有理数: (5-1/5)*5  = 24
+```
+
+这两行是 `test/intonly.test.mjs` 的断言. 顺手还有一组**人工可复核**的普查: 只从 {1,3,5,7} 四张
+点数里发的 35 副牌 (`C(4+4-1,4) = 35`), 有理数可解 20 副, 整数可解 18 副, 差的那 2 副正好就是
+`1,5,5,5` 和 `3,3,7,7`.
+
+语义要说清楚: `solvable` 判的是**全四张**能不能凑出 24 (锚点就是这个口径), 而 `cards` 判的是
+**最少用几张**. 所以 `3,3,7,7` 在两个求解器里 `cards` 都是 3 (`3*7+3`), 但只有有理数求解器认为
+全四张可解. `measure()` 把 `intCards`/`intSolvable`/`fraction` 三个字段并排放着, 就是为了不让这两
+件事在文档里被混为一谈.
+
+## 验收
+
+```bash
+bash tools/verify.sh                  # node 套件 + 浏览器五段, 末尾 === ALL GREEN ===
+SKIP_UNIT=1 bash tools/verify.sh      # 只跑浏览器 (CI 的 browser job)
+SCENARIOS="pointer" bash tools/verify.sh
+```
+
+浏览器层是真鼠标: CDP `Input.dispatchMouseEvent` 按 `plan` 的坐标点数字、点运算符, 断言
+"每三击恰好一步" "先点运算符/点同一个数两次/除以零都不计数" "分数那一格真的是 7/8".
+
+## 文件地图
+
+```
+index.html            一个 canvas + 右侧读数/按钮/进度架; <link rel="icon" href="data:,">
+css/game.css          布局与配色, 无框架
+js/core/frac.js       既约分数 {n,d}: 六个二元动作 (含两个非交换方向), 除零 -> null
+js/core/solve.js      穷举: 可达值集 + 最少张数 + 最少步数 + 本质不同算式条数, 全部记忆化 + 硬预算
+js/core/intonly.js    负例: 只允许整数中间值的弱求解器
+js/core/make.js       1820 副的索引空间 dealAt/dealIndex, 难度带判据, makeLot 搜索
+js/core/library.js    烘焙池的查表层 (浏览器只用这个)
+js/core/game.js       一次点击的规则: 选两个数 + 一个运算符, 拒绝计数, 实时可达性
+js/core/rng.js        FNV-1a + mulberry32 (与标杆仓逐字一致)
+js/core/storage.js    单键 localStorage, 三层保护: 无 window / 被拒 / 存档损坏
+js/data/lots.js       构建期产物: 48 副牌的测量结果
+js/view.js            像素: 四张牌、分数格、运算符键、算式流水
+js/main.js            路由 #/ #/lot/<id> #/daily #/random/<band>/<token>, 挂钩 window.point24
+tools/bake.mjs        两遍烤池: 全空间普查 -> 逐带取样 -> 逐手复解 -> 写文件
+tools/playtest.mjs    CDP 驱动 + 五段页内断言 @boot @play @routes @save @pointer
+tools/verify.sh       一次性验收, 自己起的 Chrome 自己收
+test/*.test.mjs       8 个套件, 64 条断言
+```
+
+## 规则
+
+- 四张牌, 每次选**两个数**再选**一个运算符**, 两数被结果替换.
+- 允许: `+ - * /`, 中间值可以是任意既约分数.
+- 不允许: 乘方、开方、阶乘、数字拼接、小数点. 加任何一条, 1362/1820 这个锚点就作废.
+- 目标 24. 每手的 `张数 / 步数 / 算式条数` 由穷举给出, 不是难度标签.
+
+## 已知边界
+
+- 分数中间值**必须**支持, 否则 `3,3,7,7` 会被误判无解 —— 弱求解器就是专门留着演示这一点的.
+- 实时提示 `survey()` 在 4 个数上跑, 实测中位 2ms/最大 19ms, 并且有 `limit` 硬预算; 超预算时
+  返回 `live = null` 并显示"搜索预算耗尽", 不会假装"无解".
+- 存档的 id 只在"同一次 bake"内稳定: 重新烤池子等于换一批题 (`test/library.test.mjs` 会立刻发现).
+- 没有计时、连击、签到、排行榜、内购 —— 这个项目只有牌桌.
+
+## License
+
+MIT, 见 `LICENSE`.

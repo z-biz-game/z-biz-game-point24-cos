@@ -1,0 +1,37 @@
+{
+  "name": "point24",
+  "version": "1.0.0",
+  "description": "二十四点 Point 24 — 浏览器原生 24 点. 每手的张数/步数/算式条数由有理数域穷举量出, 牌局在构建期烘焙并逐手复验, 并带一个整数中间值负例求解器.",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "start": "node server.cjs",
+    "dev": "node server.cjs 5199",
+    "electron": "electron .",
+    "bake": "node tools/bake.mjs",
+    "check": "for f in js/*.js js/*/*.js server.cjs electron/main.cjs tools/*.mjs test/*.mjs; do node --check \"$f\" || exit 1; done && echo OK",
+    "unit": "for f in test/*.test.mjs; do node \"$f\" || exit 1; done",
+    "test": "npm run check && npm run unit",
+    "verify": "bash tools/verify.sh"
+  },
+  "keywords": [
+    "game",
+    "puzzle",
+    "24-game",
+    "rational-arithmetic",
+    "exhaustive-search",
+    "procedural",
+    "electron"
+  ],
+  "author": "z-biz-game",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {},
+  "build": {
+    "appId": "com.zbiz.point24",
+    "productName": "Point 24",
+    "mac": { "category": "public.app-category.puzzle-games" },
+    "win": { "target": "nsis" },
+    "linux": { "target": "AppImage" }
+  }
+}
