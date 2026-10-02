@@ -545,7 +545,8 @@ window.point24 = {
   },
   get anim() { return view.snapshot(); },
   // 对拍入口：不经 rAF，直接把一帧的时间预算喂进仿真（harness 用它钉死三档帧率）。
-  tick(dt) { return anim.advance(dt); },
+  // 与 rAF 走同一道暂停闸门 —— 暂停期间仿真必须一帧都不推进，不然暂停只是冻画面。
+  tick(dt) { return app.paused ? 0 : anim.advance(dt); },
   setPaused(on) { return setPaused(on); },
   toggleMute() { audio.toggle(); syncMute(); return audio.muted; },
   toggleFullscreen() { return toggleFullscreen(); },
