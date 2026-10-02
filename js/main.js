@@ -10,6 +10,9 @@ import { store } from './core/storage.js';
 import { displayExpr } from './core/frac.js';
 import { rankName } from './view.js';
 import { createView } from './view.js';
+import { createAnim } from './anim.js';
+import { createAudio } from './audio.js';
+import { registerSW } from './pwa.js';
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -18,9 +21,14 @@ const el = {
   verdict: $('verdict'), tally: $('tally'), undo: $('undo'), hint: $('hint'),
   restart: $('restart'), share: $('share'), next: $('next'), again: $('again'),
   toast: $('toast'), canvas: $('board'), wipe: $('wipe'),
+  pause: $('pause'), mute: $('mute'), fullscreen: $('fullscreen'), help: $('help'),
+  tutorial: $('tutorial'), tutorialClose: $('tutorial-close'), hud: $('hud'),
 };
 
-const HANDS = ALL.length;
+// reduceMotion 是真分支，不是一句 CSS：粒子上限、抖动、发牌、涟漪全部要在这里关掉。
+const motionQuery = typeof matchMedia === 'function'
+  ? matchMedia('(prefers-reduced-motion: reduce)')
+  : { matches: false, addEventListener: null };
 const app = {
   mode: 'home',
   index: 1,
@@ -30,7 +38,21 @@ const app = {
   hints: 0,
   label: '',
   day: null,
+  paused: false,
+  reduced: !!motionQuery.matches,
+  started: false,
 };
+if (motionQuery.addEventListener) {
+  motionQuery.addEventListener('change', (ev) => {
+    app.reduced = !!ev.matches;
+    anim.setReducedMotion(() => app.reduced);
+    view.redraw();
+  });
+}
+
+const HANDS = ALL.length;
+const audio = createAudio();
+const anim = createAnim({ reducedMotion: () => app.reduced });
 
 function clampIndex(n) {
   return Math.min(HANDS, Math.max(1, Number(n) || 1));
@@ -75,6 +97,9 @@ function resolve(rt) {
 const view = createView(el.canvas, {
   onSelect: (i) => pick(i),
   onOp: (op) => press(op),
+  anim,
+  isPaused: () => app.paused,
+  reducedMotion: () => app.reduced,
 });
 
 function say(html) {
@@ -186,6 +211,8 @@ function paintStatus() {
 function commit(i, j, op) {
   const r = combine(app.game, i, j, op);
   if (!r.ok) {
+    anim.reject();
+    audio.play('bad');
     paintStatus();
     renderCrumbs();
     if (r.reason === 'div0') say('除以零不是一步 —— 没有计数');
@@ -194,6 +221,9 @@ function commit(i, j, op) {
     else if (r.reason === 'op') say('不认识的运算符 —— 没有计数');
     return false;
   }
+  const at = view.tileCentre(app.game.slots.length - 1);
+  anim.merge(at.x, at.y);
+  audio.play('step');
   if (app.game.done) finish();
   else {
     paintStatus();
@@ -205,6 +235,8 @@ function commit(i, j, op) {
 
 function pick(i) {
   const sel = toggle(app.game, i);
+  anim.select(i);
+  audio.play('pick');
   paintStatus();
   return sel;
 }
@@ -236,6 +268,9 @@ function finish() {
   el.next.hidden = !nextId;
   el.next.dataset.id = nextId;
   el.curtain.hidden = false;
+  const at = view.tileCentre(Math.max(0, app.game.slots.length - 1));
+  anim.win(at.x, at.y);
+  audio.play('win');
   paintStatus();
   render();
 }
@@ -266,6 +301,10 @@ function apply() {
   app.index = ALL.indexOf(r.hand) + 1;
   app.game = createGame(r.hand);
   app.hints = 0;
+  app.paused = false;
+  app.started = true;
+  syncPause();
+  anim.reset();
   el.curtain.hidden = true;
   view.attach(app.game);
   render();
@@ -312,6 +351,7 @@ el.hint.addEventListener('click', () => {
     return;
   }
   app.hints++;
+  audio.play('pick');
   say(`参考算式：<b>${displayExpr(app.hand.sample)}</b>（本手共 ${app.hand.exprs} 条本质不同的最简算式）`);
   renderCrumbs();
 });
@@ -319,16 +359,89 @@ el.hint.addEventListener('click', () => {
 function restart() {
   reset(app.game);
   app.hints = 0;
+  // 复位的不只是牌局：时钟、累加器、粒子、脉冲、抖动、发牌进度全部归零，
+  // 否则上一手炸到一半的花色点会飘进新的一手。
+  anim.reset();
+  if (app.paused) setPaused(false);
   el.curtain.hidden = true;
   view.attach(app.game);
   render();
   say('回到起点');
 }
 
+// —— 暂停：仿真冻结的开关。累加器一帧都不再推进，牌局状态原样留着 ——
+function setPaused(on) {
+  const next = !!on;
+  if (next === app.paused) return app.paused;
+  app.paused = next;
+  syncPause();
+  return app.paused;
+}
+
+function syncPause() {
+  if (el.pause) {
+    el.pause.textContent = app.paused ? '继续' : '暂停';
+    el.pause.setAttribute('aria-pressed', String(app.paused));
+  }
+  view.setRunning(!app.paused);
+  view.redraw();
+}
+
+function syncMute() {
+  if (!el.mute) return;
+  el.mute.textContent = audio.muted ? '音效：关' : '音效：开';
+  el.mute.setAttribute('aria-pressed', String(!audio.muted));
+}
+
 el.restart.addEventListener('click', restart);
 el.again.addEventListener('click', restart);
 el.next.addEventListener('click', () => go(`#/lot/${el.next.dataset.id || app.hand.id}`));
 el.share.addEventListener('click', shareLink);
+el.undo.addEventListener('click', () => audio.play('undo'));
+if (el.pause) el.pause.addEventListener('click', () => setPaused(!app.paused));
+if (el.mute) el.mute.addEventListener('click', () => { audio.toggle(); syncMute(); });
+
+// 全屏绑到 HUD 上真实存在的 #fullscreen；iOS Safari 不支持 requestFullscreen，
+// 这里如实提示而不是静默失败。
+function toggleFullscreen() {
+  const doc = document;
+  if (doc.fullscreenElement || doc.webkitFullscreenElement) {
+    const exit = doc.exitFullscreen || doc.webkitExitFullscreen;
+    if (exit) exit.call(doc);
+    return 'exit';
+  }
+  const target = el.hud || doc.documentElement;
+  const req = target.requestFullscreen || target.webkitRequestFullscreen;
+  if (!req) { toast('这个浏览器不支持全屏（iOS Safari 请用系统菜单）'); return 'unsupported'; }
+  const p = req.call(target);
+  if (p && p.catch) p.catch(() => toast('全屏被浏览器拒绝了'));
+  return 'enter';
+}
+if (el.fullscreen) el.fullscreen.addEventListener('click', () => toggleFullscreen());
+document.addEventListener('fullscreenchange', () => {
+  if (el.fullscreen) el.fullscreen.setAttribute('aria-pressed', String(!!document.fullscreenElement));
+});
+
+function showTutorial(on) {
+  if (!el.tutorial) return;
+  el.tutorial.hidden = !on;
+  if (el.help) el.help.setAttribute('aria-expanded', String(!!on));
+}
+function toggleTutorial() { showTutorial(el.tutorial && el.tutorial.hidden); }
+if (el.help) el.help.addEventListener('click', toggleTutorial);
+if (el.tutorialClose) el.tutorialClose.addEventListener('click', () => showTutorial(false));
+if (el.tutorial) {
+  el.tutorial.addEventListener('click', (ev) => { if (ev.target === el.tutorial) showTutorial(false); });
+}
+// 首次访问自动讲一遍玩法；看过就不再打扰，这个标记本身也进存档。
+function maybeTeach() {
+  if (store.tutorialSeen || !el.tutorial) return;
+  showTutorial(true);
+}
+function dismissTutorial() {
+  showTutorial(false);
+  store.seenTutorial();
+}
 
 // Wiping the save is the one destructive thing this game can do, so it asks twice instead of
 // firing on a stray click.
@@ -350,17 +463,50 @@ window.addEventListener('hashchange', apply);
 window.addEventListener('resize', () => view.measure());
 window.addEventListener('keydown', (ev) => {
   if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
-  const k = ev.key.toLowerCase();
-  if (k === 'escape' && !el.curtain.hidden) el.curtain.hidden = true;
-  else if (k === 'u') el.undo.click();
-  else if (k === 'h') el.hint.click();
-  else if (k === 'r') el.restart.click();
+  const k = ev.key;
+  const lower = String(k).toLowerCase();
+  if (k === 'Escape') {
+    if (el.tutorial && !el.tutorial.hidden) dismissTutorial();
+    else if (!el.curtain.hidden) el.curtain.hidden = true;
+    else if (app.game.sel.length) { clearSelection(app.game); paintStatus(); }
+  } else if (k === 'Enter') {
+    if (el.tutorial && !el.tutorial.hidden) dismissTutorial();
+    else if (!el.curtain.hidden) el.next.hidden ? el.again.click() : el.next.click();
+    else if (!app.game.moves) say('点两个数，再点一个运算符');
+  } else if (k >= '1' && k <= '4') {
+    if (app.paused) { say('暂停中 —— 按 P 或空格继续'); return; }
+    pick(Number(k) - 1);
+    view.redraw();
+  } else if (k === '+' || k === '-' || k === '*' || k === '/') {
+    if (app.paused) { say('暂停中 —— 按 P 或空格继续'); return; }
+    press(k);
+  } else if (k === ' ' || lower === 'p') {
+    setPaused(!app.paused);
+  } else if (lower === 'r') {
+    restart();
+  } else if (lower === 'm') {
+    audio.toggle();
+    syncMute();
+  } else if (lower === 'f') {
+    toggleFullscreen();
+  } else if (k === '?' || lower === 'h' && ev.shiftKey || lower === 't') {
+    toggleTutorial();
+  } else if (lower === 'u') {
+    el.undo.click();
+  } else if (lower === 'h') {
+    el.hint.click();
+  }
+  if ([' ', 'ArrowUp', 'ArrowDown'].includes(k)) ev.preventDefault();
 });
 
 view.measure();
-// Deliberately no requestAnimationFrame loop: this game is entirely event-driven, so a tab
-// that reports itself hidden (headless Chrome does) still paints every committed step.
+syncMute();
+registerSW();
+// Deliberately no always-on requestAnimationFrame loop: this game is event-driven, so a tab
+// that reports itself hidden (headless Chrome does) still paints every committed step. The
+// loop in js/view.js only stays mounted while js/anim.js still has something to move.
 apply();
+maybeTeach();
 
 window.point24 = {
   version: 1,
@@ -386,9 +532,25 @@ window.point24 = {
       unlocked: store.unlocked,
       solved: Object.values(store.records).filter((r) => r.solved).length,
       curtain: !el.curtain.hidden,
+      paused: app.paused,
+      muted: audio.muted,
+      reducedMotion: app.reduced,
+      tutorial: !!(el.tutorial && !el.tutorial.hidden),
+      fullscreen: !!document.fullscreenElement,
+      audioNodes: audio.nodes,
+      audioBlocked: audio.blocked,
+      ctxState: audio.ctxState,
       slots: app.game ? app.game.slots.map((s) => `${s.f.n}/${s.f.d}`) : [],
     };
   },
+  get anim() { return view.snapshot(); },
+  // 对拍入口：不经 rAF，直接把一帧的时间预算喂进仿真（harness 用它钉死三档帧率）。
+  tick(dt) { return anim.advance(dt); },
+  setPaused(on) { return setPaused(on); },
+  toggleMute() { audio.toggle(); syncMute(); return audio.muted; },
+  toggleFullscreen() { return toggleFullscreen(); },
+  showTutorial(on) { if (on) showTutorial(true); else dismissTutorial(); return !el.tutorial.hidden; },
+  resetAnim() { anim.reset(); return view.snapshot(); },
   get pool() { return poolStats(); },
   load(hash) { go(hash); return app.hand && app.hand.id; },
   hand() { return app.hand; },

@@ -172,3 +172,107 @@ body {
   #board { height: 400px; }
   .readout { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* —— 命中区：拇指不是鼠标指针。所有会改变游戏状态的控件都至少 44x44。 —— */
+.modes button,
+.hud button,
+.controls button,
+.curtain-actions button,
+.shelf button,
+.save button,
+.tutorial-actions button {
+  min-height: 44px;
+  min-width: 44px;
+}
+.shelf button { padding: 8px 6px; }
+.about .save button { min-height: 44px; }
+.modes button:focus-visible, .hud button:focus-visible, .controls button:focus-visible,
+.shelf button:focus-visible, .curtain-actions button:focus-visible,
+.tutorial-actions button:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* —— 安全区：viewport 已带 viewport-fit=cover，env() 才不是恒 0 —— */
+body {
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.topbar {
+  padding-top: max(14px, env(safe-area-inset-top));
+  padding-left: max(18px, env(safe-area-inset-left));
+  padding-right: max(18px, env(safe-area-inset-right));
+}
+.stage {
+  padding-left: max(18px, env(safe-area-inset-left));
+  padding-right: max(18px, env(safe-area-inset-right));
+  padding-bottom: max(18px, calc(env(safe-area-inset-bottom) + 18px));
+}
+.toast { bottom: max(22px, calc(env(safe-area-inset-bottom) + 12px)); }
+
+/* —— HUD —— */
+.hud { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+.hud button {
+  background: var(--panel-2);
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.hud button[aria-pressed="true"] { color: #1a1408; background: var(--gold); border-color: var(--gold); }
+.hud button + .totals, .totals + .hud { margin-left: auto; }
+.totals { margin-left: 0; }
+
+/* —— 玩法说明浮层 —— */
+.tutorial {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(16px, calc(env(safe-area-inset-bottom) + 16px)) max(16px, env(safe-area-inset-left));
+  background: rgba(8, 10, 14, 0.78);
+}
+.tutorial[hidden] { display: none; }
+.tutorial-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 18px 20px;
+  max-width: 620px;
+  max-height: 86vh;
+  overflow: auto;
+}
+.tutorial-card h2 { margin: 0 0 8px; font-size: 19px; }
+.tutorial-card h3 { margin: 14px 0 4px; font-size: 13px; color: var(--gold); font-weight: 600; }
+.tutorial-card .steps { margin: 0; padding-left: 20px; display: grid; gap: 8px; font-size: 14px; }
+.tutorial-card .legend { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13px; color: var(--ink-soft); }
+.tutorial-card .legend b { color: var(--ink); }
+.tutorial-card .keys { margin: 0; font-size: 12px; color: var(--ink-soft); line-height: 2; }
+.tutorial-card code { background: #0e1218; border-radius: 4px; padding: 1px 5px; }
+.tutorial-card kbd {
+  background: #0e1218;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 1px 6px;
+  font: 600 11px ui-monospace, monospace;
+  color: var(--ink);
+}
+.tutorial-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
+.tutorial-actions .primary { background: var(--gold); color: #1a1408; border-color: var(--gold); font-weight: 600; }
+
+/* —— 降级动效：不是把时长调短，是把位移与过渡整条撤掉 —— */
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; }
+  .controls button:active, .shelf button:active { transform: none; }
+  .toast { transition: none; }
+  .curtain, .tutorial { backdrop-filter: none; }
+  .shelf { scroll-behavior: auto; }
+}

@@ -8,17 +8,74 @@
 // guard has to catch ReferenceError, not just SecurityError.
 
 const KEY = 'point24.save.v1';
+const MAX_UNLOCK = 9999;
 
 function blank() {
   return {
     records: {},
     daily: {},
     unlocked: 1,
+    tutorial: false,
     stats: { solves: 0, perfect: 0, ops: 0, hints: 0 },
   };
 }
 
 let cache = null;
+let dropped = 0;
+
+const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const num = (v, fallback = 0) => (Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : fallback);
+
+// 第二段：一条记录单独清洗。坏就只丢这一条，其余照常读出 —— 这是"一条垃圾档不能冻死整局"
+// 的具体落点，也是 test/storage.test.mjs 逐条取证的对象。
+function sanitizeRecord(raw) {
+  if (!isObj(raw)) return null;
+  const best = Number(raw.best);
+  if (raw.best !== undefined && !Number.isFinite(best)) return null;
+  const plays = num(raw.plays, 0);
+  const rec = {
+    solved: raw.solved === true || raw.solved === 1,
+    best: Number.isFinite(best) && best >= 0 ? Math.round(best) : null,
+    plays: Math.round(plays),
+    perfect: raw.perfect === true || raw.perfect === 1,
+  };
+  if (!rec.solved && !rec.best) rec.solved = !!rec.best;
+  return rec;
+}
+
+function sanitizeRecords(raw) {
+  const out = {};
+  if (!isObj(raw)) return out;
+  for (const id of Object.keys(raw)) {
+    const rec = sanitizeRecord(raw[id]);
+    if (rec) out[String(id)] = rec;
+    else dropped++;
+  }
+  return out;
+}
+
+function sanitizeDaily(raw) {
+  const out = {};
+  if (!isObj(raw)) return out;
+  for (const day of Object.keys(raw)) {
+    const v = raw[day];
+    if (isObj(v) && typeof v.id === 'string') {
+      out[String(day)] = { id: v.id, at: num(v.at, 0) };
+    } else if (typeof v === 'string') {
+      out[String(day)] = { id: v, at: 0 };
+    } else {
+      dropped++;
+    }
+  }
+  return out;
+}
+
+function sanitizeStats(raw) {
+  const base = blank().stats;
+  if (!isObj(raw)) return base;
+  for (const k of Object.keys(base)) base[k] = Math.round(num(raw[k], base[k]));
+  return base;
+}
 
 function read() {
   if (cache) return cache;
@@ -29,20 +86,24 @@ function read() {
     raw = null;
   }
   if (raw) {
+    // 第一段：只做"这是不是一份可解析的对象"。解析失败 ⇒ 整份作废、退回空白，但游戏照开。
     try {
       const p = JSON.parse(raw);
-      if (p && typeof p === 'object') {
-        const base = blank();
+      if (isObj(p)) {
+        const unlocked = Math.round(num(p.unlocked, 1));
         cache = {
-          records: p.records && typeof p.records === 'object' ? p.records : base.records,
-          daily: p.daily && typeof p.daily === 'object' ? p.daily : base.daily,
-          unlocked: Number(p.unlocked) > 0 ? Number(p.unlocked) : base.unlocked,
-          stats: { ...base.stats, ...(p.stats || {}) },
+          records: sanitizeRecords(p.records),
+          daily: sanitizeDaily(p.daily),
+          unlocked: unlocked >= 1 ? Math.min(MAX_UNLOCK, unlocked) : 1,
+          tutorial: p.tutorial === true || p.tutorial === 1,
+          stats: sanitizeStats(p.stats),
         };
         return cache;
       }
+      dropped++;
     } catch (err) {
       // A corrupt save is not worth keeping; start clean rather than crash the shell.
+      dropped++;
     }
   }
   cache = blank();
@@ -62,6 +123,15 @@ export const store = {
   get stats() { return read().stats; },
   get daily() { return read().daily; },
   get unlocked() { return read().unlocked; },
+  get tutorialSeen() { return !!read().tutorial; },
+  get droppedRecords() { read(); return dropped; },
+
+  seenTutorial() {
+    const s = read();
+    s.tutorial = true;
+    persist();
+    return s.tutorial;
+  },
 
   record(id) {
     return read().records[id] || null;
