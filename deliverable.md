@@ -11,8 +11,8 @@
 | 完备性锚点 | 1..13 可重复四元组 1820 副全枚举, 可解 **1362/1820** —— `test/anchor.test.mjs` 真跑全部 1820 副 |
 | 分数证据 | 正向 `3,3,7,7`、`1,5,5,5` 有理数域可解; 整数中间值负例求解器 `js/core/intonly.js` 判其不可解 (`test/intonly.test.mjs`) |
 | 依赖数 | 0 (`dependencies` 与 `devDependencies` 均为 `{}`) |
-| 二进制资产 | 0 (画面为 canvas 2D 程序绘制, 图标 `data:,`) |
-| 测试钩子 | `window.point24` (`js/main.js` 第 365 行起, state getter / load / numberPoint / keyPoint / plan / play) |
+| 二进制资产 | 16 张真实 PNG: `icons/` 12 张图标 (1024/512/192/180/96/48/32/16 + maskable 512/192 + apple-touch-icon 180 + og-card 1200x630), `img/` 2 张游戏内贴图 (felt 256x256 可平铺绒面、pips 512x128 四帧花色 sprite). 全部由 `assets/gen/make_art.py` 现跑生成 (确定性: 连跑两次 icon-1024 的 md5 相同), 运行期零依赖不变 |
+| 测试钩子 | `window.point24` (`js/main.js` 末尾 `window.point24`: state getter / load / numberPoint / keyPoint / plan / play, 精修波又加了 anim / tick / setPaused / toggleMute / toggleFullscreen / showTutorial / resetAnim) |
 
 ## 文件清单与验证者
 

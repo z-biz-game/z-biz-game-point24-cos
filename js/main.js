@@ -41,6 +41,7 @@ const app = {
   paused: false,
   reduced: !!motionQuery.matches,
   started: false,
+  touched: false,
 };
 if (motionQuery.addEventListener) {
   motionQuery.addEventListener('change', (ev) => {
@@ -234,6 +235,7 @@ function commit(i, j, op) {
 }
 
 function pick(i) {
+  touchTable();
   const sel = toggle(app.game, i);
   anim.select(i);
   audio.play('pick');
@@ -242,6 +244,7 @@ function pick(i) {
 }
 
 function press(op) {
+  touchTable();
   const sel = app.game.sel;
   const i = sel.length > 0 ? sel[0] : -1;
   const j = sel.length > 1 ? sel[1] : -1;
@@ -429,16 +432,24 @@ function showTutorial(on) {
 }
 function toggleTutorial() { showTutorial(el.tutorial && el.tutorial.hidden); }
 if (el.help) el.help.addEventListener('click', toggleTutorial);
-if (el.tutorialClose) el.tutorialClose.addEventListener('click', () => showTutorial(false));
+if (el.tutorialClose) el.tutorialClose.addEventListener('click', dismissTutorial);
 if (el.tutorial) {
   el.tutorial.addEventListener('click', (ev) => { if (ev.target === el.tutorial) showTutorial(false); });
 }
-// 首次访问自动讲一遍玩法；看过就不再打扰，这个标记本身也进存档。
+// 首次访问自动讲一遍玩法，但只在玩家还没碰过牌桌时浮出来 —— 浮层是模态的，
+// 挡在已经开打的牌桌上就是缺陷而不是引导。看过与否记进存档。
+let teachTimer = 0;
 function maybeTeach() {
-  if (store.tutorialSeen || !el.tutorial) return;
-  showTutorial(true);
+  if (store.tutorialSeen || !el.tutorial || app.touched) return;
+  clearTimeout(teachTimer);
+  teachTimer = setTimeout(() => { if (!app.touched) showTutorial(true); }, 1600);
+}
+function touchTable() {
+  app.touched = true;
+  clearTimeout(teachTimer);
 }
 function dismissTutorial() {
+  clearTimeout(teachTimer);
   showTutorial(false);
   store.seenTutorial();
 }
@@ -463,6 +474,7 @@ window.addEventListener('hashchange', apply);
 window.addEventListener('resize', () => view.measure());
 window.addEventListener('keydown', (ev) => {
   if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  touchTable();
   const k = ev.key;
   const lower = String(k).toLowerCase();
   if (k === 'Escape') {
