@@ -52,6 +52,34 @@
       <button type="button" id="share">分享这手</button>
       <button id="btn-fullscreen" type="button" aria-pressed="false" title="全屏（F）">全屏</button>
     </div>
+    <!-- 玩法说明块：引擎里没有规则文字表（没有 RULE_TEXT 之类的导出），规则只以代码存在，
+         所以下面每一句都对着一个函数写，改代码的人能逐条对回去，别让这块自己长出第二套口径：
+           24 怎么算赢、可以不用完四张牌 → js/core/game.js 的 combine 末尾 `if (key(v) === game.targetKey) game.done = true` (L88)，
+             判据只比这一步的结果，没有"必须用光所有牌"的条件
+           「张数」= 允许不用完所有牌时的最少牌数 → js/main.js 的 renderCrumbs (L98) 与 js/data/lots.js 的 BANDS_META
+           四个运算符、减除不交换 → js/core/frac.js 的 OPS (L39) 与头注释 (L35-38)、combine 用 a、b 顺序 (game.js L78-81)
+           点选/取消/第三个点留下最近两个 → js/core/game.js 的 toggle (L43-50)
+           两格换成结果、步数 +1、非法步被拒 → js/core/game.js 的 combine (L72-91) 与 check (L59-68)
+           点空白处什么也不发生 → js/view.js 的 hit 返回 { kind: 'void' } (L127) 与 down (L130-135)
+           分数/负数是合法中间值、精确有理数 → js/core/frac.js 头注释 (L1-7) 与 view.js 把分数画成分数 (L171-174)
+           「分数 必需/不必」读数 → js/main.js 的 renderCrumbs (L101)
+           四种不计步的点法 → js/core/game.js 的 check (L59-68) 与 main.js 的四句人话 (L191-194)
+           三档评级 → js/core/game.js 的 grade (L133-138)；「认证最少」= lot.steps (main.js L99)
+           每步重算「仍可达成 · 最少还需 N 步」 → js/core/game.js 的 survey (L117-129) 与 main.js 的 paintStatus (L175-181)
+           算式条数按交换律折叠、结合律不折叠 → js/core/frac.js 的 canonical 头注释 (L70-76)
+           「参考算式」只摆一条烘焙好的 sample → js/main.js 的 hint 监听 (L309-317)
+           键盘 U/H/R/Esc/F → js/main.js 的 keydown (L351-358) 与全屏 IIFE (L469-477)
+           牌面 A(1)…K(13) → js/view.js 的 NAMES (L12) 与 rankName (L27-29) -->
+    <details class="about">
+      <summary>玩法：怎么点、怎么算赢</summary>
+      <p><strong>目标</strong>：让盘上出现一个正好等于 <strong>24</strong> 的数就算赢 —— 只要某一步的结果是 24，立刻判赢，<strong>不要求把四张牌都用完</strong>。面板的 <code>张数</code> 写的就是这一手最少用几张牌才够，<code>火花</code> 那一档 12 副全是 2 张牌。</p>
+      <p><strong>牌面与运算符</strong>：四张牌是 A(1)、2…10、J、Q、K。运算符只有 <code>+ − × ÷</code> 四个。减和除<strong>不交换</strong>：先点的那张是被减数 / 被除数，顺序点反了就是另一个答案。</p>
+      <p><strong>怎么操作</strong>：点一张牌选中（再点一下取消；点第三张会留下最近选的两张），再点一个运算符 —— 两张牌被结果替换，<code>步数</code> +1。点空白处什么也不发生。键盘：<code>U</code> 撤销 · <code>H</code> 参考算式 · <code>R</code> 重开 · <code>Esc</code> 收起胜利卡 · <code>F</code> 全屏。</p>
+      <p><strong>中间值可以是分数和负数</strong>：引擎全程走精确有理数，<code>3/7</code> 就是 <code>3/7</code>，不会被四舍五入，所以 3·3·7·7 这类只能靠分数中间值才收得回来的手是合法的。面板的 <code>分数</code> 一栏告诉你这一手是否<strong>必需</strong>分数中间值。</p>
+      <p><strong>四种点法不计步</strong>：同一个数和自己运算、只选了一张牌、点的地方不是运算符、除以零 —— 四种当场拒掉，不进 <code>步数</code>。</p>
+      <p><strong>几档才算好</strong>：<code>步数</code> 不超过 <code>认证最少</code> 是 ★★★「最优解」，多 1 步是 ★★「差一步」，再多是 ★「绕了路」。每走一步都会重算一次「仍可达成 · 最少还需 N 步」，所以你能随时知道自己还有没有救；走死了会直接说这一堆数已经算不出 24。</p>
+      <p><strong>关于 <code>算式</code> 与 <code>参考算式</code></strong>：<code>算式</code> 是达成该牌数时本质不同的最简算式条数，<code>a+b</code> 与 <code>b+a</code> 算同一条，而 <code>(2×3)×4</code> 与 <code>2×(3×4)</code> 算两条。<code>参考算式</code> 只把构建期烘好的一条摆给你看，不会替你走。</p>
+    </details>
     <div class="shelf" id="shelf"></div>
     <details class="about">
       <summary>这一手的数字从哪来</summary>
