@@ -104,7 +104,7 @@ js/core/storage.js    单键 localStorage, 三层保护: 无 window / 被拒 / �
 js/data/lots.js       构建期产物: 48 副牌的测量结果
 js/view.js            像素: 四张牌、分数格、运算符键、算式流水
 js/main.js            路由 #/ #/lot/<id> #/daily #/random/<band>/<token>, 挂钩 window.point24
-tools/bake.mjs        两遍烤池: 全空间普查 -> 逐带取样 -> 逐手复解 -> 写文件 / tools/assemble-site / tools/deploy-set / tools/deploy-set-selftest
+tools/bake.mjs        两遍烤池: 全空间普查 -> 逐带取样 -> 逐手复解 -> 写文件
 tools/playtest.mjs    CDP 驱动 + 五段页内断言 @boot @play @routes @save @pointer
 tools/verify.sh       一次性验收, 自己起的 Chrome 自己收
 test/*.test.mjs       8 个套件, 64 条断言
