@@ -173,106 +173,66 @@ body {
   .readout { grid-template-columns: repeat(2, 1fr); }
 }
 
-/* —— 命中区：拇指不是鼠标指针。所有会改变游戏状态的控件都至少 44x44。 —— */
-.modes button,
-.hud button,
-.controls button,
-.curtain-actions button,
-.shelf button,
-.save button,
-.tutorial-actions button {
-  min-height: 44px;
-  min-width: 44px;
-}
-.shelf button { padding: 8px 6px; }
-.about .save button { min-height: 44px; }
-.modes button:focus-visible, .hud button:focus-visible, .controls button:focus-visible,
-.shelf button:focus-visible, .curtain-actions button:focus-visible,
-.tutorial-actions button:focus-visible {
-  outline: 2px solid var(--gold);
-  outline-offset: 2px;
-}
+/* 中央分发：safe-area 兜底 */
 
-/* —— 安全区：viewport 已带 viewport-fit=cover，env() 才不是恒 0 —— */
+/* ---------- safe-area：刘海与主屏条不吃掉按钮（中央分发，akari-cos 同口径） ---------- */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+}
+html, body {
+  padding-left: var(--sal);
+  padding-right: var(--sar);
+}
 body {
-  padding-top: env(safe-area-inset-top);
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-top: var(--sat);
+  padding-bottom: var(--sab);
+  min-height: 100vh;
+  min-height: 100dvh;
 }
-.topbar {
-  padding-top: max(14px, env(safe-area-inset-top));
-  padding-left: max(18px, env(safe-area-inset-left));
-  padding-right: max(18px, env(safe-area-inset-right));
+/* 贴边的固定/吸底元素自己让开主屏条，别让 home indicator 压住按钮 */
+.fixed-bottom, .bottom-bar, .hud-bottom, footer.app-footer {
+  padding-bottom: calc(var(--sab) + env(safe-area-inset-bottom, 0px));
 }
-.stage {
-  padding-left: max(18px, env(safe-area-inset-left));
-  padding-right: max(18px, env(safe-area-inset-right));
-  padding-bottom: max(18px, calc(env(safe-area-inset-bottom) + 18px));
-}
-.toast { bottom: max(22px, calc(env(safe-area-inset-bottom) + 12px)); }
 
-/* —— HUD —— */
-.hud { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
-.hud button {
-  background: var(--panel-2);
-  color: var(--ink-soft);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 8px 12px;
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-.hud button[aria-pressed="true"] { color: #1a1408; background: var(--gold); border-color: var(--gold); }
-.hud button + .totals, .totals + .hud { margin-left: auto; }
-.totals { margin-left: 0; }
 
-/* —— 玩法说明浮层 —— */
-.tutorial {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: grid;
-  place-items: center;
-  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
-    max(16px, calc(env(safe-area-inset-bottom) + 16px)) max(16px, env(safe-area-inset-left));
-  background: rgba(8, 10, 14, 0.78);
-}
-.tutorial[hidden] { display: none; }
-.tutorial-card {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 18px 20px;
-  max-width: 620px;
-  max-height: 86vh;
-  overflow: auto;
-}
-.tutorial-card h2 { margin: 0 0 8px; font-size: 19px; }
-.tutorial-card h3 { margin: 14px 0 4px; font-size: 13px; color: var(--gold); font-weight: 600; }
-.tutorial-card .steps { margin: 0; padding-left: 20px; display: grid; gap: 8px; font-size: 14px; }
-.tutorial-card .legend { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13px; color: var(--ink-soft); }
-.tutorial-card .legend b { color: var(--ink); }
-.tutorial-card .keys { margin: 0; font-size: 12px; color: var(--ink-soft); line-height: 2; }
-.tutorial-card code { background: #0e1218; border-radius: 4px; padding: 1px 5px; }
-.tutorial-card kbd {
-  background: #0e1218;
-  border: 1px solid var(--line);
-  border-bottom-width: 2px;
-  border-radius: 5px;
-  padding: 1px 6px;
-  font: 600 11px ui-monospace, monospace;
-  color: var(--ink);
-}
-.tutorial-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
-.tutorial-actions .primary { background: var(--gold); color: #1a1408; border-color: var(--gold); font-weight: 600; }
+/* ============================================================
+   44px 触摸命中下限（Apple HIG 手机可用性底线）
+   每个真正可点的元素都要有 ≥44×44 CSS px 的命中盒。
+   min-height / min-width 是**硬下限**：只会把过小的盒子撑到 44px，
+   本来就够大的控件（宽药丸、整行列表项、大数字键）外形一点不变。
 
-/* —— 降级动效：不是把时长调短，是把位移与过渡整条撤掉 —— */
+   两处非平凡之处：
+   1) 需要 !important —— 各组件自己有 `.shelf button { min-width: 34px }`
+      这类更"贴身"的规则，类选择器的优先级高于任何标签堆叠，
+      不加的话这条底线会被组件规则逐个抵消。
+   2) 先把 --touch-min 定死：tapa / nurikabe 早就写了
+      `min-height: var(--touch-min)`，但全仓没有任何地方定义过这个变量，
+      无 fallback 的 var() 在计算值阶段整条作废 —— 那是个看着像 44px、
+      实际什么都不保证的死规则。这里补上定义，让它们原本的意图真正成立。
+   ============================================================ */
+:root { --touch-min: 44px; }
+button,
+select,
+input,
+textarea,
+a[href],
+[role="button"] {
+  min-height: 44px !important;
+  min-width: 44px !important;
+}
+
+/* ---------- 减弱动效（prefers-reduced-motion）---------- */
+/* 本仓当前**没有**可减的装饰性动效：源码自己写着 "Deliberately no requestAnimationFrame loop"，全仓没有动画层
+   剩下的 :hover 颜色瞬切与 focus 轮廓是状态反馈，不是动效，动了反而更难用。 */
 @media (prefers-reduced-motion: reduce) {
-  * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; }
-  .controls button:active, .shelf button:active { transform: none; }
-  .toast { transition: none; }
-  .curtain, .tutorial { backdrop-filter: none; }
-  .shelf { scroll-behavior: auto; }
+  /* 当下这三条不命中任何东西；写在这里是为了将来有人加动画/过渡时自动被归零，
+     而不必再想起来补这一段。颜色、透明度、命中区、focus 轮廓一律不动。 */
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }
