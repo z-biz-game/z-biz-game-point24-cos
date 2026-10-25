@@ -10,6 +10,10 @@ import { store } from './core/storage.js';
 import { displayExpr } from './core/frac.js';
 import { rankName } from './view.js';
 import { createView } from './view.js';
+// 听觉与触觉这两路反馈：视觉与数值之外，桌面上还该有"听得见"的一路。
+// 音频模块自己管手势解锁与真静音（suspend），这里只管把音接到真实事件上。
+import { audio } from './audio.js';
+import { haptics } from './haptics.js';
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -183,7 +187,15 @@ function paintStatus() {
 // The one place a step happens: the canvas tap, the replay from a test link, and the baked
 // plan all arrive here. Illegal asks (wrong order, division by zero, a slot that is not there)
 // are refused by js/core/game.js and never reach the move count.
+//
+// 声音接在这条路径上，因为这条路径上发生的是**真实事件**：
+//   · 点一个数（选中了）→ tap
+//   · 引擎拒了这一步 → wrong（引擎说不合法，壳层只是把它念出来）
+//   · 引擎认了这一步 → correct（一次有效操作成功）
+//   · 这一手把数推到了再也算不出 24 的死路上 → lose（本仓唯一的失败信号）
+//   · 算出了 24 → win（finish 里）
 function commit(i, j, op) {
+  const wasLive = app.game.live;        // 这一步之前，这堆数还够不够得着 24
   const r = combine(app.game, i, j, op);
   if (!r.ok) {
     paintStatus();
@@ -192,19 +204,32 @@ function commit(i, j, op) {
     else if (r.reason === 'same') say('同一个数不能和自己运算 —— 没有计数');
     else if (r.reason === 'range') say('先点两个数，再点运算符 —— 没有计数');
     else if (r.reason === 'op') say('不认识的运算符 —— 没有计数');
+    audio.play('wrong');
+    haptics.wrong();
     return false;
   }
-  if (app.game.done) finish();
-  else {
-    paintStatus();
-    renderCrumbs();
-    say(`第 ${app.game.moves} 步：${displayExpr(app.game.ops[app.game.ops.length - 1].expr)}`);
+  if (app.game.done) {
+    finish();                          // 收官那一响是 win，在 finish 里
+    haptics.correct();
+    return true;
   }
+  audio.play('correct');               // 一次有效操作成功
+  haptics.correct();
+  if (wasLive !== false && app.game.live === false) {
+    // 这一手把这堆数推到了再也算不出 24 的死路上（core/game.js 的 survey 判的 live=false）。
+    // 这是本仓唯一的"失败"信号 —— 24 点不会有人输，只是这手之后无解了。
+    audio.play('lose');
+  }
+  paintStatus();
+  renderCrumbs();
+  say(`第 ${app.game.moves} 步：${displayExpr(app.game.ops[app.game.ops.length - 1].expr)}`);
   return true;
 }
 
 function pick(i) {
   const sel = toggle(app.game, i);
+  audio.play('tap');                  // 点一个数：只是选中，还没走子
+  haptics.tap();
   paintStatus();
   return sel;
 }
@@ -219,6 +244,7 @@ function press(op) {
 function finish() {
   const hand = app.hand;
   const g = app.game;
+  audio.play('win');                  // 算出了 24：这一手是通关
   const rec = store.solve(hand.id, { moves: g.moves, par: hand.steps, hints: app.hints });
   if (app.day) store.markDaily(app.day, hand.id);
   let nextId = '';
@@ -479,4 +505,27 @@ window.point24 = {
   window.addEventListener('webkitfullscreenchange', sync);
   window.addEventListener('MSFullscreenChange', sync);
   sync();
+})();
+
+// ---- 音效开关（#btn-sound）----
+//
+// 静音走 `audio.setMuted(true)`，那是 `ctx.suspend()`：整个 AudioContext 挂起。
+// **不许**改成像"把 master.gain 拧到 0"那样 —— 只拧 gain 是假静音：节点照建、时钟照跑，
+// 取消静音之后还有一截尾巴在响。真正的静音必须是挂起整个上下文。
+//
+// 按钮找不到就不装（和全屏那一条同一条纪律）：留一串没人按的代码等于没做这个功能。
+(function bindSound() {
+  const btn = document.getElementById('btn-sound');
+  if (!btn) return;
+  function paint() {
+    const on = !audio.muted;
+    btn.setAttribute('aria-pressed', String(on));
+    btn.textContent = on ? '音效：开' : '音效：关';
+    btn.title = on ? '点击关闭音效' : '点击开启音效';
+  }
+  btn.addEventListener('click', () => {
+    audio.setMuted(!audio.muted);
+    paint();
+  });
+  paint();
 })();
