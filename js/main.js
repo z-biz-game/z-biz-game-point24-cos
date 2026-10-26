@@ -11,7 +11,8 @@ import { displayExpr } from './core/frac.js';
 import { rankName } from './view.js';
 import { createView } from './view.js';
 import { createAnim } from './anim.js';
-import { createAudio } from './audio.js';
+import { audio } from './audio.js';
+import { haptics } from './haptics.js';
 import { registerSW } from './pwa.js';
 
 const $ = (id) => document.getElementById(id);
@@ -52,7 +53,6 @@ if (motionQuery.addEventListener) {
 }
 
 const HANDS = ALL.length;
-const audio = createAudio();
 const anim = createAnim({ reducedMotion: () => app.reduced });
 
 function clampIndex(n) {
@@ -210,10 +210,12 @@ function paintStatus() {
 // plan all arrive here. Illegal asks (wrong order, division by zero, a slot that is not there)
 // are refused by js/core/game.js and never reach the move count.
 function commit(i, j, op) {
+  const wasLive = app.game.live;        // 这一步之前，这堆数还够不够得着 24
   const r = combine(app.game, i, j, op);
   if (!r.ok) {
     anim.reject();
-    audio.play('bad');
+    audio.play('wrong');                // 引擎拒了这一步
+    haptics.wrong();
     paintStatus();
     renderCrumbs();
     if (r.reason === 'div0') say('除以零不是一步 —— 没有计数');
@@ -224,13 +226,21 @@ function commit(i, j, op) {
   }
   const at = view.tileCentre(app.game.slots.length - 1);
   anim.merge(at.x, at.y);
-  audio.play('step');
-  if (app.game.done) finish();
-  else {
-    paintStatus();
-    renderCrumbs();
-    say(`第 ${app.game.moves} 步：${displayExpr(app.game.ops[app.game.ops.length - 1].expr)}`);
+  if (app.game.done) {
+    finish();                           // 收官那一响是 win，在 finish 里
+    haptics.correct();
+    return true;
   }
+  audio.play('correct');                // 一次有效操作成功
+  haptics.correct();
+  if (wasLive !== false && app.game.live === false) {
+    // 这一手把这堆数推到了再也算不出 24 的死路上（core/game.js 的 survey 判的 live=false）。
+    // 这是本仓唯一的"失败"信号 —— 24 点不会有人输，只是这手之后无解了。
+    audio.play('lose');
+  }
+  paintStatus();
+  renderCrumbs();
+  say(`第 ${app.game.moves} 步：${displayExpr(app.game.ops[app.game.ops.length - 1].expr)}`);
   return true;
 }
 
@@ -238,7 +248,8 @@ function pick(i) {
   touchTable();
   const sel = toggle(app.game, i);
   anim.select(i);
-  audio.play('pick');
+  audio.play('tap');                    // 点一个数：只是选中，还没走子
+  haptics.tap();
   paintStatus();
   return sel;
 }
@@ -354,7 +365,7 @@ el.hint.addEventListener('click', () => {
     return;
   }
   app.hints++;
-  audio.play('pick');
+  audio.play('tap');
   say(`参考算式：<b>${displayExpr(app.hand.sample)}</b>（本手共 ${app.hand.exprs} 条本质不同的最简算式）`);
   renderCrumbs();
 });
@@ -400,9 +411,9 @@ el.restart.addEventListener('click', restart);
 el.again.addEventListener('click', restart);
 el.next.addEventListener('click', () => go(`#/lot/${el.next.dataset.id || app.hand.id}`));
 el.share.addEventListener('click', shareLink);
-el.undo.addEventListener('click', () => audio.play('undo'));
+el.undo.addEventListener('click', () => audio.play('tap'));
 if (el.pause) el.pause.addEventListener('click', () => setPaused(!app.paused));
-if (el.mute) el.mute.addEventListener('click', () => { audio.toggle(); syncMute(); });
+if (el.mute) el.mute.addEventListener('click', () => { audio.setMuted(!audio.muted); syncMute(); });
 
 // 全屏绑到 HUD 上真实存在的 #fullscreen；iOS Safari 不支持 requestFullscreen，
 // 这里如实提示而不是静默失败。
@@ -497,7 +508,7 @@ window.addEventListener('keydown', (ev) => {
   } else if (lower === 'r') {
     restart();
   } else if (lower === 'm') {
-    audio.toggle();
+    audio.setMuted(!audio.muted);
     syncMute();
   } else if (lower === 'f') {
     toggleFullscreen();
@@ -549,9 +560,7 @@ window.point24 = {
       reducedMotion: app.reduced,
       tutorial: !!(el.tutorial && !el.tutorial.hidden),
       fullscreen: !!document.fullscreenElement,
-      audioNodes: audio.nodes,
-      audioBlocked: audio.blocked,
-      ctxState: audio.ctxState,
+      audioUnlocked: audio.unlocked,
       slots: app.game ? app.game.slots.map((s) => `${s.f.n}/${s.f.d}`) : [],
     };
   },
@@ -560,7 +569,7 @@ window.point24 = {
   // 与 rAF 走同一道暂停闸门 —— 暂停期间仿真必须一帧都不推进，不然暂停只是冻画面。
   tick(dt) { return app.paused ? 0 : anim.advance(dt); },
   setPaused(on) { return setPaused(on); },
-  toggleMute() { audio.toggle(); syncMute(); return audio.muted; },
+  toggleMute() { audio.setMuted(!audio.muted); syncMute(); return audio.muted; },
   toggleFullscreen() { return toggleFullscreen(); },
   showTutorial(on) { if (on) showTutorial(true); else dismissTutorial(); return !el.tutorial.hidden; },
   resetAnim() { anim.reset(); return view.snapshot(); },

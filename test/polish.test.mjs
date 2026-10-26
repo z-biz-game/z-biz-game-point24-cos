@@ -14,13 +14,16 @@ const param = () => ({ value: 0, setValueAtTime() {}, linearRampToValueAtTime() 
 globalThis.window = {
   AudioContext: function FakeAudioContext() {
     const node = () => ({ connect: (d) => d, disconnect() {}, start() {}, stop() {}, gain: param(), frequency: param(), type: 'sine' });
-    return {
+    // 状态必须挂在**返回出去的这个对象**上：挂到构造实例上的话，audio.js 读到的 ctx.state
+    // 永远是 'running'，"静音后该不该 resume"这类断言就成了空跑（永远测不出反向）。
+    const self = {
       state: 'running', currentTime: 0, destination: {},
       createOscillator: () => { oscCalls++; return node(); },
       createGain: () => node(),
-      resume: () => { resumeCalls++; this.state = 'running'; return Promise.resolve(); },
-      suspend: () => { suspendCalls++; this.state = 'suspended'; return Promise.resolve(); },
+      resume: () => { resumeCalls++; self.state = 'running'; return Promise.resolve(); },
+      suspend: () => { suspendCalls++; self.state = 'suspended'; return Promise.resolve(); },
     };
+    return self;
   },
   localStorage: (() => {
     const m = new Map();
@@ -94,15 +97,18 @@ test('阴性对照：把累加器改成定长 1/60 必须发散（尺子不是�
 
 test('静音是真静音：suspend 被调，且静音态不新建任何振荡器', () => {
   const audio = createAudio();
-  assert.equal(audio.play('pick'), true);
+  assert.equal(audio.play('tap'), false, '未在真实手势里解锁之前，一个节点都不该建');
+  assert.equal(audio.unlock(), true, '真实手势里 unlock 应当成功');
+  assert.equal(audio.play('tap'), true);
   const nodesBefore = oscCalls;
   assert.ok(nodesBefore >= 1, '未静音时应当真的建了振荡器');
-  assert.equal(audio.mute(), true);
-  assert.equal(suspendCalls >= 1, true, 'mute 必须 suspend AudioContext');
-  for (let i = 0; i < 5; i++) assert.equal(audio.play('step'), false, '静音态 play() 应当直接拒绝');
+  audio.setMuted(true);
+  assert.equal(audio.muted, true);
+  assert.equal(suspendCalls >= 1, true, 'setMuted(true) 必须 suspend AudioContext');
+  for (let i = 0; i < 5; i++) assert.equal(audio.play('move'), false, '静音态 play() 应当直接拒绝');
   assert.equal(oscCalls, nodesBefore, `静音后不得新建振荡器：${oscCalls} vs ${nodesBefore}`);
-  assert.equal(audio.blocked, 5);
-  assert.equal(audio.unmute(), false);
+  audio.setMuted(false);
+  assert.equal(audio.muted, false);
   assert.equal(resumeCalls >= 1, true, '解除静音必须 resume');
   assert.equal(audio.play('win'), true);
 });
